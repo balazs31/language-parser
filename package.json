@@ -1,0 +1,18 @@
+{
+  "name": "language-parser",
+  "version": "1.0.0",
+  "description": "A language file merger and splitter for the new-component package",
+  "main": "parser.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node ./parser "
+  },
+  "author": "Kendi Balazs",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "fs": "0.0.1-security",
+    "path": "^0.12.7",
+    "prettier": "^2.0.5"
+  }
+}
