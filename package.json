@@ -11,6 +11,7 @@
   "license": "MIT",
   "type": "module",
   "scope": "balazs31",
+  "bin": "node ./parser.js",
   "dependencies": {
     "fs": "0.0.1-security",
     "path": "^0.12.7",
