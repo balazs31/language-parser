@@ -6,9 +6,10 @@
  * Installation (NPM): npm i --save-dev language-parser
  * Installation (Yarn): yarn add --dev language-parser
 
- * Usage: node ./node_modules/language-parser/parser.js -a [merge | split] -l [languages] -f [jsonFile]
+ * Usage: node ./node_modules/language-parser/parser.js -a [merge | split | fill] -l [languages] -f [jsonFile] -d [defaultLangue]
  * Ex: node ./node_modules/language-parser/parser.js -a merge -l en-en,nl-nl
  *     node ./node_modules/language-parser/parser.js -a split -f locales.json
+ *     node ./node_modules/language-parser/parser.js -a fill -l nl-nl -d en-en
  */
 
 import fs from "fs";
@@ -99,6 +100,59 @@ const walk = function (dir, languages = [], done) {
   });
 };
 
+const getObjectKeysWithEmptyValues = (obj) => {
+  Object.keys(obj).forEach((key) => {
+    if (typeof obj[key] === "object") {
+      iterate(obj[key]);
+    } else {
+      obj[key] = "";
+    }
+  });
+
+  return obj;
+};
+
+/**
+ *
+ */
+const fillFiles = function (dir, languages = [], defaultLanguge, done) {
+  let results = [];
+  fs.readdir(dir, function (err, list) {
+    if (err) return done(err);
+    let i = 0;
+    (function next() {
+      let file = list[i++];
+      if (!file) return done(null, results);
+      file = path.resolve(dir, file);
+      fs.stat(file, async function (err, stat) {
+        if (stat && stat.isDirectory()) {
+          fillFiles(file, languages, defaultLanguge,  function (err, res) {
+            results = results.concat(res);
+            next();
+          });
+        } else {
+          if (isLanguageFile(file, [defaultLanguge])) {
+            const fileLng = getFileLanguage(file);
+            if (fileLng === defaultLanguge) {
+              const data = await getLanguageVariable(file, fileLng);
+              const objWithEmptyValues = getObjectKeysWithEmptyValues(data);
+              languages.forEach(lng => {
+                let splittedFile = file.split('.');
+                splittedFile[splittedFile.length - 2] = lng;
+                const lngFile = splittedFile.join('.');
+                writeLanguageToFile(lngFile, lng, objWithEmptyValues)
+              })
+
+            }
+          }
+
+          next();
+        }
+      });
+    })();
+  });
+};
+
 /**
  * Writes the content to a file
  */
@@ -110,7 +164,7 @@ const writeFile = (path, content) => {
  * Exports the merges languages into the locales.json file
  */
 const exportJson = (obj) => {
-  const stringifiedObj = JSON.stringify(obj);
+  let stringifiedObj = JSON.stringify(obj, null, 2);
   writeFile("locales.json", stringifiedObj);
 };
 
@@ -173,17 +227,31 @@ const splitLanguageFiles = async () => {
 };
 
 /**
+ * Fills empty language files, with the exiting keys from the default language file
+ */
+const fillLanguageFiles = () => {
+  const defaultLng = args.d;
+  const languages = [...args.l.split(",")];
+
+  fillFiles("./src/components", languages, defaultLng, function (err, results) {
+    if (err) throw err;
+  });
+};
+
+/**
  * Starts the script
  */
 const init = () => {
   const action = args.a;
-
   switch (action) {
     case "merge":
       mergeLanguageFiles();
       break;
     case "split":
       splitLanguageFiles();
+      break;
+    case "fill":
+      fillLanguageFiles();
       break;
     default:
       console.error("Invalid action. Use one of the following: merge, split");
