@@ -10,5 +10,6 @@ Installation (Yarn): yarn add --dev language-parser
 
  Usage: node ./node_modules/language-parser/parser.js -a [merge | split] -l [languages] -f [jsonFile]
  
- Ex: node ./node_modules/language-parser/parser.js -a merge -l en-en,nl-nl
-     node ./node_modules/language-parser/parser.js -a split -f locales.json
+ Ex: 
+ * `node ./node_modules/language-parser/parser.js -a merge -l en-en,nl-nl`
+ * `node ./node_modules/language-parser/parser.js -a split -f locales.json`
