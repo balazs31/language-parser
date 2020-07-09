@@ -1,6 +1,6 @@
 {
   "name": "language-parser",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A language file merger and splitter for the new-component package",
   "main": "parser.js",
   "scripts": {
@@ -11,9 +11,12 @@
   "license": "MIT",
   "type": "module",
   "scope": "balazs31",
-  "bin": "node ./parser.js",
+  "bin": {
+    "language-parser": "./parser.js"
+  },
   "dependencies": {
     "fs": "0.0.1-security",
+    "line-reader": "^0.4.0",
     "path": "^0.12.7",
     "prettier": "^2.0.5"
   }

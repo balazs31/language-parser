@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 /**
  * In order for this script to work the package.json must containt "type": "module" at top level
  * If using node <= 13, experimental features have to be enabled. For node > 14 experimental features
@@ -6,16 +8,19 @@
  * Installation (NPM): npm i --save-dev language-parser
  * Installation (Yarn): yarn add --dev language-parser
 
- * Usage: node ./node_modules/language-parser/parser.js -a [merge | split | fill] -l [languages] -f [jsonFile] -d [defaultLangue]
- * Ex: node ./node_modules/language-parser/parser.js -a merge -l en-en,nl-nl
- *     node ./node_modules/language-parser/parser.js -a split -f locales.json
- *     node ./node_modules/language-parser/parser.js -a fill -l nl-nl -d en-en
+ * Usage: node ./node_modules/language-parser/parser.js -a [merge | split | fill | toJson | toCsv] -l [languages] -f [jsonFile] -d [defaultLangue] -i [inputFile] -o [outputFile]
+ * Ex: npx language-parser -a merge -l en-en,nl-nl
+ *     npx language-parser -a split -f locales.json
+ *     npx language-parser -a fill -l nl-nl -d en-en
+ *     npx language-parser -a toJson -i locales.csv -o locales.json
+ *     npx language-parser -a toCsv -i locales.json -o locales.csv
  */
 
-import fs from "fs";
+import fs, { write } from "fs";
 import path from "path";
 import prettier from "prettier";
 import minimist from "minimist";
+import lineReader from "line-reader";
 
 const args = minimist(process.argv.slice(2));
 
@@ -126,7 +131,7 @@ const fillFiles = function (dir, languages = [], defaultLanguge, done) {
       file = path.resolve(dir, file);
       fs.stat(file, async function (err, stat) {
         if (stat && stat.isDirectory()) {
-          fillFiles(file, languages, defaultLanguge,  function (err, res) {
+          fillFiles(file, languages, defaultLanguge, function (err, res) {
             results = results.concat(res);
             next();
           });
@@ -136,13 +141,12 @@ const fillFiles = function (dir, languages = [], defaultLanguge, done) {
             if (fileLng === defaultLanguge) {
               const data = await getLanguageVariable(file, fileLng);
               const objWithEmptyValues = getObjectKeysWithEmptyValues(data);
-              languages.forEach(lng => {
-                let splittedFile = file.split('.');
+              languages.forEach((lng) => {
+                let splittedFile = file.split(".");
                 splittedFile[splittedFile.length - 2] = lng;
-                const lngFile = splittedFile.join('.');
-                writeLanguageToFile(lngFile, lng, objWithEmptyValues)
-              })
-
+                const lngFile = splittedFile.join(".");
+                writeLanguageToFile(lngFile, lng, objWithEmptyValues);
+              });
             }
           }
 
@@ -163,9 +167,9 @@ const writeFile = (path, content) => {
 /**
  * Exports the merges languages into the locales.json file
  */
-const exportJson = (obj) => {
+const exportJson = (obj, name = "locales.json") => {
   let stringifiedObj = JSON.stringify(obj, null, 2);
-  writeFile("locales.json", stringifiedObj);
+  writeFile(name, stringifiedObj);
 };
 
 /**
@@ -198,6 +202,57 @@ const writeLanguage = (lng, jsonData) => {
   });
 };
 
+/**
+ * Creates the Csv object
+ */
+const createCsvData = (jsonData) => {
+  const languages = getLanguages(jsonData);
+
+  let csvContent = "File,Key,Value\n";
+
+  const val = languages.map((lng) => {
+    const lngObj = jsonData[lng];
+    const arr = Object.keys(lngObj).map((fileKey) => {
+      const fileObj = lngObj[fileKey];
+      return Object.keys(fileObj).map((translationKey) => {
+        return `${fileKey},${translationKey},${fileObj[translationKey]}`;
+      });
+    });
+    arr.unshift(`${lng}`);
+    return arr;
+  });
+
+  csvContent += val.flat(10).join("\n");
+  return csvContent;
+};
+
+/**
+ * Creates a Json object from csv data
+ */
+const createJsonFromCsv = (input) => {
+  let currentLocale = null;
+  const json = {};
+  return new Promise((resolve, reject) => {
+    lineReader.eachLine(input, (line, last) => {
+      if (line.length === 5 && line.includes("-")) {
+        currentLocale = line.trim();
+        json[currentLocale] = {};
+      } else if (line.length !== 5 && currentLocale) {
+        const [file, key, value] = line.split(",");
+
+        if (!json[currentLocale][file]) {
+          json[currentLocale][file] = {};
+        }
+
+        json[currentLocale][file][key] = value;
+      }
+
+      if (last) {
+        resolve(json);
+      }
+    });
+  });
+};
 /**
  * Merges the language files into a single .json file
  */
@@ -239,6 +294,30 @@ const fillLanguageFiles = () => {
 };
 
 /**
+ * Converts a locale json to csv
+ */
+const convertJsonToCsv = () => {
+  const input = args.i || "locales.json";
+  const output = args.o || "locales.csv";
+
+  const jsonData = JSON.parse(fs.readFileSync(input, "utf-8"));
+  const csv = createCsvData(jsonData);
+  writeFile(output, csv);
+};
+
+/**
+ * Converts a csv file to json
+ */
+const convertCsvToJson = async () => {
+  const input = args.i || "locales.csv";
+  const output = args.o || "locales.json";
+
+  const json = await createJsonFromCsv(input);
+  console.log(json);
+  exportJson(json, "csvToJson.json");
+};
+
+/**
  * Starts the script
  */
 const init = () => {
@@ -252,6 +331,12 @@ const init = () => {
       break;
     case "fill":
       fillLanguageFiles();
+      break;
+    case "toCsv":
+      convertJsonToCsv();
+      break;
+    case "toJson":
+      convertCsvToJson();
       break;
     default:
       console.error("Invalid action. Use one of the following: merge, split");
