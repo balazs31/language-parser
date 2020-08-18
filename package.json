@@ -1,6 +1,6 @@
 {
   "name": "language-parser",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "A language file merger and splitter for the new-component package",
   "main": "parser.js",
   "scripts": {

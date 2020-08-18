@@ -297,9 +297,7 @@ const createJsonFromCsv = (input) => {
           if (!json[lng][fileName]) {
             json[lng][fileName] = {};
           }
-          if (values[index]) {
-            json[lng][fileName][key] = values[index];
-          }
+          json[lng][fileName][key] = values[index];
         });
       }
 
