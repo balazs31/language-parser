@@ -21,6 +21,8 @@ import path from "path";
 import prettier from "prettier";
 import minimist from "minimist";
 import lineReader from "line-reader";
+import lodash from "lodash";
+const { merge } = lodash;
 
 const args = minimist(process.argv.slice(2));
 
@@ -55,6 +57,24 @@ const getFileLanguage = (file) => {
 };
 
 /**
+ * Returns the name of the component
+ */
+const getFileName = (path) => {
+  const [file] = path.split("/").reverse();
+  const [name] = file.split(".");
+
+  return name;
+};
+
+/**
+ * Returns the language file anme without the language suffix
+ */
+const getLanguageFileNameWithoutSuffix = (path) => {
+  const name = path.split(".").slice(0, 2).join(".");
+  return name;
+};
+
+/**
  * Formats the language key to it's js variable name, ex: en-en => en_en
  *  */
 const formatLanguageToJs = (lng) => {
@@ -68,7 +88,11 @@ const formatLanguageToJs = (lng) => {
 const getLanguageVariable = async (file, lng) => {
   const formattedLng = formatLanguageToJs(lng);
   const module = await import(file);
-  return module[formattedLng];
+  const obj = module[formattedLng];
+  const fileName = getFileName(file);
+  delete obj[fileName];
+
+  return obj;
 };
 
 /**
@@ -76,10 +100,15 @@ const getLanguageVariable = async (file, lng) => {
  */
 const walk = function (dir, languages = [], done) {
   let results = [];
+
   fs.readdir(dir, function (err, list) {
     if (err) return done(err);
     let i = 0;
     (function next() {
+      if (dir.includes("node_modules")) {
+        return done(null, results);
+      }
+
       let file = list[i++];
       if (!file) return done(null, results);
       file = path.resolve(dir, file);
@@ -202,27 +231,45 @@ const writeLanguage = (lng, jsonData) => {
   });
 };
 
+const mergeObjectKeys = (languages, jsonData) => {
+  const lngObj = jsonData[languages[0]];
+  const newObj = {};
+  Object.keys(lngObj).map((fileKey) => {
+    const fileName = getLanguageFileNameWithoutSuffix(fileKey);
+    newObj[fileName] = {};
+    languages.forEach((lng) => {
+      const currentLngFileName = `${fileName}.${lng}.js`;
+      const currentLngObj = jsonData[lng][currentLngFileName];
+      newObj[fileName] = merge(newObj[fileName], currentLngObj);
+    });
+  });
+
+  return newObj;
+};
+
 /**
  * Creates the Csv object
  */
 const createCsvData = (jsonData) => {
   const languages = getLanguages(jsonData);
 
-  let csvContent = "File,Key,Value\n";
+  let csvContent = "File,Key," + languages.map((lng) => `${lng}`) + "\n";
 
-  const val = languages.map((lng) => {
-    const lngObj = jsonData[lng];
-    const arr = Object.keys(lngObj).map((fileKey) => {
-      const fileObj = lngObj[fileKey];
-      return Object.keys(fileObj).map((translationKey) => {
-        return `${fileKey},${translationKey},${fileObj[translationKey]}`;
-      });
+  const mergedLanguageObjects = mergeObjectKeys(languages, jsonData);
+
+  Object.keys(mergedLanguageObjects).map((fileName) => {
+    return Object.keys(mergedLanguageObjects[fileName]).map((valueKey) => {
+      const row =
+        `${fileName},${valueKey},` +
+        languages.map((lng) => {
+          const currentLngFileName = `${fileName}.${lng}.js`;
+          const currentLngObj = jsonData[lng][currentLngFileName];
+          return currentLngObj[valueKey] || "";
+        });
+      csvContent += row + "\n";
     });
-    arr.unshift(`${lng}`);
-    return arr;
   });
 
-  csvContent += val.flat(10).join("\n");
   return csvContent;
 };
 
@@ -232,20 +279,31 @@ const createCsvData = (jsonData) => {
 const createJsonFromCsv = (input) => {
   let currentLocale = null;
   const json = {};
+  let index = 0;
+  let languages = [];
   return new Promise((resolve, reject) => {
     lineReader.eachLine(input, (line, last) => {
-      if (line.length === 5 && line.includes("-")) {
-        currentLocale = line.trim();
-        json[currentLocale] = {};
-      } else if (line.length !== 5 && currentLocale) {
-        const [file, key, value] = line.split(",");
+      if (index === 0) {
+        languages = line.split(",").slice(2);
+        languages.forEach((lng) => {
+          json[lng] = {};
+        });
+      } else {
+        const [file, key] = line.split(",");
+        const values = line.split(",").slice(2);
 
-        if (!json[currentLocale][file]) {
-          json[currentLocale][file] = {};
-        }
-
-        json[currentLocale][file][key] = value;
+        languages.forEach((lng, index) => {
+          const fileName = `${file}.${lng}.js`;
+          if (!json[lng][fileName]) {
+            json[lng][fileName] = {};
+          }
+          if (values[index]) {
+            json[lng][fileName][key] = values[index];
+          }
+        });
       }
+
+      index++;
 
       if (last) {
         resolve(json);
@@ -263,9 +321,13 @@ const mergeLanguageFiles = () => {
     lngObj[lng] = {};
   });
 
-  walk("./src/components", languages, function (err, results) {
-    if (err) throw err;
-    exportJson(lngObj);
+  const directories = ["./src", "./native/hooks", "./native/components"];
+
+  directories.forEach((dir) => {
+    walk(dir, languages, function (err, results) {
+      if (err) throw err;
+      exportJson(lngObj);
+    });
   });
 };
 
@@ -273,7 +335,7 @@ const mergeLanguageFiles = () => {
  * Splits the languages files from a .json file
  */
 const splitLanguageFiles = async () => {
-  const file = args.f;
+  const file = args.f || "locales.json";
   let jsonData = JSON.parse(fs.readFileSync(file, "utf-8"));
   const languages = getLanguages(jsonData);
   languages.forEach((lng) => {
@@ -288,7 +350,7 @@ const fillLanguageFiles = () => {
   const defaultLng = args.d;
   const languages = [...args.l.split(",")];
 
-  fillFiles("./src/components", languages, defaultLng, function (err, results) {
+  fillFiles("./", languages, defaultLng, function (err, results) {
     if (err) throw err;
   });
 };
@@ -313,8 +375,7 @@ const convertCsvToJson = async () => {
   const output = args.o || "locales.json";
 
   const json = await createJsonFromCsv(input);
-  console.log(json);
-  exportJson(json, "csvToJson.json");
+  exportJson(json, output);
 };
 
 /**
