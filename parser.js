@@ -190,7 +190,11 @@ const fillFiles = function (dir, languages = [], defaultLanguge, done) {
  * Writes the content to a file
  */
 const writeFile = (path, content) => {
-  fs.writeFileSync(path, content);
+  try {
+    fs.writeFileSync(path, content);
+  } catch (e) {
+    // console.log(e);
+  }
 };
 
 /**
@@ -254,7 +258,6 @@ const createCsvData = (jsonData) => {
   const languages = getLanguages(jsonData);
 
   let csvContent = "File,Key," + languages.map((lng) => `${lng}`) + "\n";
-
   const mergedLanguageObjects = mergeObjectKeys(languages, jsonData);
 
   Object.keys(mergedLanguageObjects).map((fileName) => {
@@ -273,6 +276,29 @@ const createCsvData = (jsonData) => {
   return csvContent;
 };
 
+const splitValues = (values) => {
+  const lngValues = [];
+  let isQuote = false;
+
+  let newWord;
+
+  values.split(",").forEach((str) => {
+    if (str.startsWith('"')) {
+      isQuote = true;
+      newWord = str.substr(1);
+    } else if (str.substr(-1) === '"') {
+      isQuote = false;
+      newWord += `,${str.slice(0, -1)}`;
+      lngValues.push(newWord);
+    } else if (isQuote) {
+      newWord += `,${str}`;
+    } else {
+      lngValues.push(str);
+    }
+  });
+
+  return lngValues;
+};
 /**
  * Creates a Json object from csv data
  */
@@ -284,13 +310,17 @@ const createJsonFromCsv = (input) => {
   return new Promise((resolve, reject) => {
     lineReader.eachLine(input, (line, last) => {
       if (index === 0) {
-        languages = line.split(",").slice(2);
+        languages = line
+          .split(",")
+          .slice(2)
+          .filter((lng) => Boolean(lng));
+        console.log(languages);
         languages.forEach((lng) => {
           json[lng] = {};
         });
       } else {
-        const [file, key] = line.split(",");
-        const values = line.split(",").slice(2);
+        const [file, key, ...rest] = line.split(",");
+        const values = splitValues(rest.join(","), key === "destinations");
 
         languages.forEach((lng, index) => {
           const fileName = `${file}.${lng}.js`;
